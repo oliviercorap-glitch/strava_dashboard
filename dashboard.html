@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fitness Dashboard — Olivier</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f0f0f; color: #e5e5e5; padding: 20px; }
+  .container { max-width: 860px; margin: 0 auto; }
+
+  /* Header */
+  .header { display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 20px; padding-bottom: 16px;
+            border-bottom: 1px solid #2e2e2e; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .meta { font-size: 12px; color: #666; }
+  .btn-refresh { background: transparent; border: 1px solid #333; color: #999;
+                 padding: 6px 14px; border-radius: 20px; cursor: pointer;
+                 font-size: 12px; }
+  .btn-refresh:hover { border-color: #FC4C02; color: #FC4C02; }
+  .btn-logout { background: transparent; border: none; color: #555;
+                font-size: 12px; cursor: pointer; margin-left: 12px; }
+  .btn-logout:hover { color: #999; }
+
+  /* KPI Grid */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+              gap: 12px; margin-bottom: 16px; }
+  .kpi { background: #1a1a1a; border-radius: 12px; padding: 16px; }
+  .kpi .lbl { font-size: 11px; color: #666; text-transform: uppercase;
+              letter-spacing: 0.05em; margin-bottom: 8px; }
+  .kpi .val { font-size: 26px; font-weight: 600; color: #fff; }
+  .kpi .unit { font-size: 13px; color: #666; margin-left: 3px; font-weight: 400; }
+  .kpi .sub { font-size: 12px; color: #555; margin-top: 4px; }
+  .prog-bar { background: #2a2a2a; border-radius: 20px; height: 5px;
+              margin-top: 10px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 20px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 500;
+           padding: 3px 9px; border-radius: 20px; margin-top: 8px; }
+
+  /* Section */
+  .section { background: #1a1a1a; border-radius: 12px; padding: 20px;
+             margin-bottom: 14px; }
+  .section-title { font-size: 12px; font-weight: 600; color: #777;
+                   text-transform: uppercase; letter-spacing: 0.06em;
+                   margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+  /* Analyse markdown */
+  .analyse h2 { font-size: 15px; font-weight: 600; color: #FC4C02;
+                margin: 16px 0 8px; }
+  .analyse h2:first-child { margin-top: 0; }
+  .analyse p { font-size: 13px; color: #bbb; line-height: 1.7; margin-bottom: 6px; }
+  .analyse ul, .analyse ol { padding-left: 20px; margin-bottom: 8px; }
+  .analyse li { font-size: 13px; color: #bbb; line-height: 1.7; margin-bottom: 3px; }
+  .analyse strong { color: #ddd; font-weight: 500; }
+
+  /* Activités récentes */
+  .act-row { display: flex; align-items: center; gap: 12px; padding: 10px 0;
+             border-bottom: 1px solid #222; font-size: 13px; }
+  .act-row:last-child { border-bottom: none; }
+  .act-type { width: 28px; height: 28px; border-radius: 8px; display: flex;
+              align-items: center; justify-content: center; font-size: 14px;
+              flex-shrink: 0; }
+  .act-name { color: #ddd; flex: 1; font-weight: 500; }
+  .act-date { color: #555; font-size: 12px; }
+  .act-stats { display: flex; gap: 12px; color: #777; font-size: 12px; }
+  .act-stat-val { color: #bbb; font-weight: 500; }
+
+  /* Séances recommandées */
+  .workout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                  gap: 10px; }
+  .workout-card { border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px;
+                  cursor: pointer; transition: border-color 0.15s; }
+  .workout-card:hover { border-color: #FC4C02; }
+  .workout-card.sel { border-color: #FC4C02; background: #1e0e04; }
+  .wk-title { font-size: 14px; font-weight: 500; color: #ddd; margin-bottom: 4px; }
+  .wk-meta { font-size: 12px; color: #666; line-height: 1.5; margin-bottom: 8px; }
+  .wk-tag { display: inline-block; font-size: 11px; padding: 2px 7px;
+            border-radius: 20px; margin-right: 4px; }
+  .tag-bike   { background: #1a2a3a; color: #7ab3d4; }
+  .tag-run    { background: #1a3a20; color: #7ad48a; }
+  .tag-indoor { background: #2a1a3a; color: #b47ad4; }
+  .tag-z2     { background: #2a2a1a; color: #c4b47a; }
+  .tag-seuil  { background: #3a1a1a; color: #d47a7a; }
+
+  /* Tabs */
+  .tab-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { padding: 6px 14px; border-radius: 20px; font-size: 12px; cursor: pointer;
+         border: 1px solid #2a2a2a; background: transparent; color: #777; }
+  .tab.active { background: #1e0e04; color: #FC4C02; border-color: #FC4C02; }
+
+  /* Loader */
+  .loader { text-align: center; padding: 60px; color: #555; }
+  .loader .spin { font-size: 28px; animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  /* Charts */
+  .chart-wrap { height: 100px; display: flex; align-items: flex-end; gap: 3px;
+                padding-top: 10px; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px;
+         transition: opacity 0.2s; }
+  .bar:hover { opacity: 0.8; }
+  .bar-lbl { font-size: 9px; color: #444; white-space: nowrap; }
+
+  /* Responsive */
+  @media (max-width: 520px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .act-stats { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div>
+      <h1>🚴 Fitness Dashboard</h1>
+      <div class="meta" id="updated">Chargement...</div>
+    </div>
+    <div style="display:flex;align-items:center">
+      <button class="btn-refresh" onclick="refresh()">↻ Actualiser</button>
+      <button class="btn-logout" onclick="window.location='/logout'">Déconnexion</button>
+    </div>
+  </div>
+
+  <div id="main">
+    <div class="loader"><div class="spin">🚴</div><p style="margin-top:16px;font-size:14px">Chargement de tes données Strava...</p></div>
+  </div>
+
+</div>
+
+<script>
+let data = null;
+
+async function loadData(force = false) {
+  if (force) await fetch('/api/refresh');
+  const res = await fetch('/api/data');
+  data = await res.json();
+  if (data.ok) render(data);
+  else document.getElementById('main').innerHTML = `<div class="loader" style="color:#f87171">Erreur : ${data.error}</div>`;
+}
+
+function tsb_color(tsb) {
+  if (tsb > 10)  return { bg: '#0a2a0a', fg: '#4ade80', badge: 'Forme fraîche 🟢' };
+  if (tsb > -10) return { bg: '#2a2a0a', fg: '#fbbf24', badge: 'Équilibre 🟡' };
+  if (tsb > -30) return { bg: '#2a1a0a', fg: '#fb923c', badge: 'Fatigue 🟠' };
+  return { bg: '#2a0a0a', fg: '#f87171', badge: 'Surcharge 🔴' };
+}
+
+function actIcon(type) {
+  const icons = { Ride: '🚴', GravelRide: '🚵', VirtualRide: '⚡',
+                  Run: '🏃', Walk: '🚶', Hike: '🥾', Swim: '🏊' };
+  return icons[type] || '🏅';
+}
+function actBg(type) {
+  if (type.includes('Run') || type === 'Walk') return '#1a3a20';
+  if (type.includes('Ride')) return '#1a2a3a';
+  return '#2a2a2a';
+}
+
+function render(d) {
+  const tsbc = tsb_color(d.charge.TSB);
+  const ftp_pct = Math.min(100, Math.round((201/230)*100));
+  const km_pct  = Math.min(100, Math.round((d.km_semaine/120)*100));
+
+  // CTL history for mini-chart
+  const hist = d.charge.historique || [];
+  const maxCTL = Math.max(...hist.map(h => h.CTL), 1);
+  const chartBars = hist.filter((_, i) => i % 3 === 0).map(h => {
+    const pct = Math.round((h.CTL / maxCTL) * 100);
+    return `<div class="bar-col">
+      <div class="bar" style="height:${pct}%;background:#FC4C02;opacity:0.6" title="CTL ${h.CTL} — ${h.date}"></div>
+      <div class="bar-lbl">${h.date.slice(5)}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('updated').textContent = `Mis à jour à ${d.updated_at} · ${d.nb_activites} activités sur 90j`;
+
+  document.getElementById('main').innerHTML = `
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="lbl">CTL — Forme</div>
+        <div class="val">${d.charge.CTL}<span class="unit">pts</span></div>
+        <div class="sub">Charge chronique 42j</div>
+        <div class="chart-wrap" style="height:60px">${chartBars}</div>
+      </div>
+      <div class="kpi">
+        <div class="lbl">ATL — Fatigue</div>
+        <div class="val">${d.charge.ATL}<span class="unit">pts</span></div>
+        <div class="sub">Charge aiguë 7j</div>
+      </div>
+      <div class="kpi" style="background:${tsbc.bg}">
+        <div class="lbl">TSB — Fraîcheur</div>
+        <div class="val" style="color:${tsbc.fg}">${d.charge.TSB}<span class="unit">pts</span></div>
+        <span class="badge" style="background:${tsbc.bg};color:${tsbc.fg};border:1px solid ${tsbc.fg}33">${tsbc.badge}</span>
+      </div>
+      <div class="kpi">
+        <div class="lbl">Volume semaine</div>
+        <div class="val">${d.km_semaine}<span class="unit">km</span></div>
+        <div class="sub">Reste ${d.reste_semaine} km / 120 km</div>
+        <div class="prog-bar"><div class="prog-fill" style="width:${km_pct}%;background:#FC4C02"></div></div>
+      </div>
+      <div class="kpi">
+        <div class="lbl">FTP actuelle</div>
+        <div class="val">201<span class="unit">W</span></div>
+        <div class="sub">Cible : 230W</div>
+        <div class="prog-bar"><div class="prog-fill" style="width:${ftp_pct}%;background:#7c3aed"></div></div>
+      </div>
+      <div class="kpi">
+        <div class="lbl">Semi-marathon</div>
+        <div class="val">Déc<span class="unit">2026</span></div>
+        <div class="sub">Avant Noël · 21,1 km</div>
+        <span class="badge" style="background:#1a2a3a;color:#7ab3d4">~24 semaines</span>
+      </div>
+    </div>
+
+    <!-- Analyse Claude -->
+    <div class="section">
+      <div class="section-title">🤖 Analyse coach IA</div>
+      <div class="analyse">${marked.parse(d.analyse)}</div>
+    </div>
+
+    <!-- Séances recommandées -->
+    <div class="section">
+      <div class="section-title">💪 Quelle séance aujourd'hui ?</div>
+      <div class="tab-row">
+        <button class="tab active" onclick="filterWorkouts('all',this)">Tout</button>
+        <button class="tab" onclick="filterWorkouts('bike',this)">Vélo outdoor</button>
+        <button class="tab" onclick="filterWorkouts('indoor',this)">Zwift</button>
+        <button class="tab" onclick="filterWorkouts('run',this)">Course</button>
+      </div>
+      <div class="workout-grid" id="wk-grid">
+        ${workoutsHTML()}
+      </div>
+      <div id="wk-detail" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid #222">
+        <button id="wk-btn" style="width:100%;padding:10px;border:1px solid #333;border-radius:8px;
+          background:transparent;color:#bbb;font-size:13px;cursor:pointer;text-align:left">
+        </button>
+      </div>
+    </div>
+
+    <!-- Activités récentes -->
+    <div class="section">
+      <div class="section-title">📋 Dernières activités</div>
+      ${d.recentes.map(a => `
+        <div class="act-row">
+          <div class="act-type" style="background:${actBg(a.type)}">${actIcon(a.type)}</div>
+          <div style="flex:1;min-width:0">
+            <div class="act-name">${a.nom}</div>
+            <div class="act-date">${a.date} · ${a.type}</div>
+          </div>
+          <div class="act-stats">
+            <div><span class="act-stat-val">${a.distance_km}</span> km</div>
+            <div><span class="act-stat-val">${a.elevation_m}</span> m D+</div>
+            <div><span class="act-stat-val">${a.duree}</span></div>
+            ${a.puissance_moy ? `<div><span class="act-stat-val">${a.puissance_moy}</span>W</div>` : ''}
+            ${a.fc_moy ? `<div><span class="act-stat-val">${a.fc_moy}</span>bpm</div>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+const WORKOUTS = [
+  { type:'bike', title:'Endurance gravel', meta:'75 min · Z2 · IF 0.65-0.72', tags:[['tag-bike','Vélo outdoor'],['tag-z2','Z2']] },
+  { type:'bike', title:'Intervalles seuil FTP', meta:'75 min · 3×15 min à 95-105% FTP · TSS ~85', tags:[['tag-bike','Vélo outdoor'],['tag-seuil','Seuil']] },
+  { type:'indoor', title:'Zwift VO2max', meta:'60 min · 5×5 min à 115-120% FTP', tags:[['tag-indoor','Zwift'],['tag-seuil','VO2max']] },
+  { type:'indoor', title:'Zwift sweet spot', meta:'75 min · 2×20 min à 88-93% FTP', tags:[['tag-indoor','Zwift'],['tag-z2','Sweet spot']] },
+  { type:'run', title:'Sortie longue', meta:'60-80 min · allure conversationnelle', tags:[['tag-run','Course'],['tag-z2','Endurance']] },
+  { type:'run', title:'Fractionné 10×400m', meta:'50 min · récup 90s · améliore VMA', tags:[['tag-run','Course'],['tag-seuil','VMA']] },
+  { type:'run', title:'Tempo 30 min', meta:'45 min total · 30 min à allure semi', tags:[['tag-run','Course'],['tag-seuil','Seuil']] },
+  { type:'bike', title:'Récupération active', meta:'45 min · Z1 uniquement · si TSB très négatif', tags:[['tag-bike','Vélo'],['tag-z2','Récup']] },
+];
+
+function workoutsHTML(filter='all') {
+  return WORKOUTS.filter(w => filter==='all' || w.type===filter).map((w,i) => `
+    <div class="workout-card" data-type="${w.type}" data-title="${w.title}"
+         onclick="selectWorkout(this,'${w.title}')">
+      <div class="wk-title">${w.title}</div>
+      <div class="wk-meta">${w.meta}</div>
+      ${w.tags.map(([cls,lbl]) => `<span class="wk-tag ${cls}">${lbl}</span>`).join('')}
+    </div>
+  `).join('');
+}
+
+function filterWorkouts(type, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('wk-grid').innerHTML = workoutsHTML(type);
+  document.getElementById('wk-detail').style.display = 'none';
+}
+
+function selectWorkout(card, name) {
+  document.querySelectorAll('.workout-card').forEach(c => c.classList.remove('sel'));
+  card.classList.add('sel');
+  const det = document.getElementById('wk-detail');
+  const btn = document.getElementById('wk-btn');
+  det.style.display = 'block';
+  btn.textContent = `Détaille la séance "${name}" avec échauffement, blocs et retour au calme →`;
+  btn.onclick = () => {
+    window.open(`https://claude.ai/new?q=${encodeURIComponent(
+      `Détaille la séance "${name}" : échauffement, blocs principaux avec durées et intensités, retour au calme. Ma FTP est 201W, je prépare un semi-marathon en décembre 2026.`
+    )}`, '_blank');
+  };
+}
+
+function refresh() {
+  document.getElementById('main').innerHTML = '<div class="loader"><div class="spin">🚴</div><p style="margin-top:16px;font-size:14px">Rechargement...</p></div>';
+  loadData(true);
+}
+
+loadData();
+</script>
+</body>
+</html>
