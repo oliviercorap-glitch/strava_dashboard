@@ -210,7 +210,7 @@ def analyser_avec_claude(activites, charge, km_semaine):
     if cached and time.time() - cached["ts"] < CACHE_TTL:
         return cached["data"]
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], http_client=None)
 
     # 5 dernières activités
     recentes = activites[:5]
