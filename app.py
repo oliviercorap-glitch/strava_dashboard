@@ -261,6 +261,12 @@ def api_data():
     """Endpoint JSON appelé par le dashboard en AJAX."""
     try:
         activites_brutes = get_activites(jours=JOURS_HISTORIQUE)
+        # Tri explicite par date decroissante (plus recent en premier)
+        activites_brutes = sorted(
+            activites_brutes,
+            key=lambda x: x.get('start_date_local', ''),
+            reverse=True
+        )
         activites = [formater_activite(a) for a in activites_brutes]
 
         charge = calculer_charge(activites)
