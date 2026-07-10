@@ -215,7 +215,7 @@ SYSTEM_PROMPT = """Tu es un coach specialise en medecine du sport pour les athle
 Tu conseilles Olivier, 50+ ans, base a Shanghai.
 
 PROFIL MEDICAL & HISTORIQUE :
-- Synovite du genou gauche en decembre 2025, declenchee par une augmentation de volume trop rapide et erratique
+- Synovite du genou en decembre 2025, declenchee par une augmentation de volume trop rapide et erratique
 - Risque de recidive si progression trop agressive ou irreguliere
 - Recuperation musculaire plus lente qu apres 50 ans — les adaptations prennent 20-30% plus de temps
 - Tendons et cartilages moins tolerants aux surcharges brutales
@@ -240,7 +240,7 @@ FORMAT DE REPONSE :
 - Markdown avec titres ## et listes -
 """
 
-def analyser_avec_claude(activites, charge, km_semaine):
+def analyser_avec_claude(activites, charge, km_semaine, km_run=0):
     # Cle de cache basee sur la date du jour + CTL (change si nouvelles activites)
     today_str = date.today().isoformat()
     cache_key = "analyse_{}_{}".format(today_str, charge["CTL"])
@@ -263,16 +263,26 @@ def analyser_avec_claude(activites, charge, km_semaine):
     prompt = (
         "Date : {}\n\n".format(datetime.now().strftime("%d %B %Y")) +
         "METRIQUES\nCTL={} ATL={} TSB={}\n".format(charge["CTL"], charge["ATL"], charge["TSB"]) +
-        "Volume semaine en cours : {} km / 120 km objectif\n\n".format(km_semaine) +
+        "Volume velo semaine : {} km / 120 km | Run semaine : {} km\n\n".format(km_semaine, km_run) +
         "5 DERNIERES ACTIVITES (de la plus recente a la plus ancienne)\n" +
         recentes_txt + "\n\n" +
-        "Analyse en 3 sections courtes :\n"
-        "## Bilan recent\n(2-3 phrases sur les dernieres sorties)\n\n"
+        "Reponds en 4 sections :\n\n"
+        "## Bilan recent\n"
+        "(2-3 phrases sur les dernieres sorties, FC, intensite, regularite)\n\n"
         "## Trajectoire objectifs\n"
-        "- FTP 230W : suis-je sur la bonne voie ?\n"
+        "- FTP 230W : progression en cours ?\n"
         "- Semi-marathon decembre : base aerobie suffisante ?\n\n"
-        "## Recommandation pour les 7 prochains jours\n"
-        "(3 seances concretes avec type, duree, intensite)"
+        "## Recommandations 7 prochains jours\n"
+        "Propose exactement 3 seances adaptees au profil medical (50+, synovite genou)\n"
+        "Pour chaque seance : jour suggere, type, duree, intensite precise, risque articulaire 🟢/🟡/🔴\n\n"
+        "## SEANCES_JSON\n"
+        "Reponds avec un bloc JSON strictement dans ce format (sans markdown autour) :\n"
+        "[\n"
+        "  {\"titre\": \"Zwift Z2 recuperation\", \"type\": \"indoor\", \"meta\": \"45-60 min · Z2 · 120-145W\", \"risque\": \"faible\", \"tags\": [\"Zwift\", \"Z2\"]},\n"
+        "  {\"titre\": \"Run facile\", \"type\": \"run\", \"meta\": \"5 km max · FC < 150 bpm · terrain plat\", \"risque\": \"faible\", \"tags\": [\"Course\", \"Endurance\"]},\n"
+        "  {\"titre\": \"Velo route endurance\", \"type\": \"bike\", \"meta\": \"60-75 min · Z2/Z3 · 2x8 min Z3\", \"risque\": \"modere\", \"tags\": [\"Velo outdoor\", \"Sweet spot\"]}\n"
+        "]\n"
+        "Le JSON doit etre la derniere chose de ta reponse, apres la section ## SEANCES_JSON"
     )
 
     msg = client.messages.create(
@@ -281,7 +291,24 @@ def analyser_avec_claude(activites, charge, km_semaine):
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
-    result = msg.content[0].text
+    full_text = msg.content[0].text
+
+    # Extrait le JSON des seances de la reponse
+    seances = []
+    try:
+        import re
+        json_match = re.search(r"\[[\s\S]*?\]", full_text[full_text.rfind("## SEANCES_JSON"):])
+        if json_match:
+            seances = json.loads(json_match.group())
+    except Exception:
+        pass
+
+    # Texte de l analyse sans le bloc JSON
+    analyse_text = full_text
+    if "## SEANCES_JSON" in full_text:
+        analyse_text = full_text[:full_text.rfind("## SEANCES_JSON")].strip()
+
+    result = {"texte": analyse_text, "seances": seances}
     _cache[cache_key] = {"data": result, "ts": time.time()}
     return result
 
@@ -337,7 +364,9 @@ def api_data():
         } for k, v in sorted(par_type.items(), key=lambda x: -x[1]["nb"])}
 
         # Analyse Claude
-        analyse_md = analyser_avec_claude(activites, charge, km_semaine)
+        analyse_result = analyser_avec_claude(activites, charge, km_semaine, km_run_semaine)
+        analyse_md = analyse_result["texte"] if isinstance(analyse_result, dict) else analyse_result
+        seances_dynamiques = analyse_result["seances"] if isinstance(analyse_result, dict) else []
 
         # 10 dernieres activites pour l'affichage (deja triees)
         recentes = activites[:10]
@@ -352,6 +381,7 @@ def api_data():
             "stats":         stats,
             "recentes":      recentes,
             "analyse":       analyse_md,
+            "seances":       seances_dynamiques,
             "updated_at":    datetime.now().strftime("%H:%M"),
             "objectifs":     OBJECTIFS,
             "debug_first":   activites[0]["date"] if activites else "vide",
