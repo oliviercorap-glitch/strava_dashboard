@@ -211,15 +211,33 @@ def calculer_charge(activites):
 # Analyse Claude
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """Tu es un coach cyclisme et running expert, conseiller personnel d'Olivier.
+SYSTEM_PROMPT = """Tu es un coach specialise en medecine du sport pour les athletes de plus de 50 ans.
+Tu conseilles Olivier, 50+ ans, base a Shanghai.
 
-PROFIL :
-- FTP actuelle : 201W (Garmin) -> cible 230W
-- Volume velo cible : 120 km/semaine
+PROFIL MEDICAL & HISTORIQUE :
+- Synovite du genou gauche en decembre 2025, declenchee par une augmentation de volume trop rapide et erratique
+- Risque de recidive si progression trop agressive ou irreguliere
+- Recuperation musculaire plus lente qu apres 50 ans — les adaptations prennent 20-30% plus de temps
+- Tendons et cartilages moins tolerants aux surcharges brutales
+
+PROFIL SPORTIF :
+- FTP actuelle : 201W (Garmin) → cible 230W fin 2026
+- Volume velo cible : 120 km/semaine — a atteindre PROGRESSIVEMENT (+10% max par semaine)
 - Objectif running : semi-marathon avant Noel 2026
+- Sports pratiques : gravel, velo route, Zwift (Wahoo Kickr), course a pied
 
-Ton analyse est courte, directe, en francais, orientee action.
-Reponds toujours en markdown avec des titres ## et des listes - pour structurer.
+REGLES ABSOLUES DE PROGRESSION :
+1. Ne jamais augmenter le volume running de plus de 10% par semaine
+2. Alterner semaines de charge et semaines allegees (-20-30% volume)
+3. Privilegier la regularite sur l intensite — 3 seances/semaine regulieres valent mieux que 5 en rafale
+4. Toujours inclure au moins 1 jour de repos complet entre deux seances running
+5. Si TSB < -20 : recommander recuperation active uniquement, pas de seances intenses
+6. Signaler explicitement tout risque de surcharge articulaire
+
+FORMAT DE REPONSE :
+- Court, direct, en francais, oriente action
+- Toujours mentionner le niveau de risque articulaire des seances proposees : 🟢 Faible / 🟡 Modere / 🔴 Eleve
+- Markdown avec titres ## et listes -
 """
 
 def analyser_avec_claude(activites, charge, km_semaine):
@@ -291,10 +309,20 @@ def api_data():
         # Volume semaine en cours (lundi -> aujourd'hui)
         today_d = date.today()
         debut_sem = today_d - timedelta(days=today_d.weekday())
-        km_semaine = round(sum(
-            a["distance_km"] for a in activites
-            if a["date"] >= debut_sem.isoformat()
+        debut_sem_str = debut_sem.isoformat()
+
+        TYPES_VELO = {'Ride', 'GravelRide', 'VirtualRide', 'EBikeRide', 'MountainBikeRide'}
+        TYPES_RUN  = {'Run', 'VirtualRun', 'TrailRun'}
+
+        km_velo_semaine = round(sum(
+            a['distance_km'] for a in activites
+            if a['date'] >= debut_sem_str and a['type'] in TYPES_VELO
         ), 1)
+        km_run_semaine = round(sum(
+            a['distance_km'] for a in activites
+            if a['date'] >= debut_sem_str and a['type'] in TYPES_RUN
+        ), 1)
+        km_semaine = km_velo_semaine  # pour compatibilite Claude
 
         # Stats par type
         par_type = defaultdict(lambda: {"nb": 0, "km": 0.0, "h": 0.0})
@@ -317,8 +345,9 @@ def api_data():
         return jsonify({
             "ok":            True,
             "charge":        charge,
-            "km_semaine":    km_semaine,
-            "reste_semaine": round(max(0, 120 - km_semaine), 1),
+            "km_semaine":       km_velo_semaine,
+            "km_run_semaine":   km_run_semaine,
+            "reste_semaine":    round(max(0, 120 - km_velo_semaine), 1),
             "nb_activites":  len(activites),
             "stats":         stats,
             "recentes":      recentes,
