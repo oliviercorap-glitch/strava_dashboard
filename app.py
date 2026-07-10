@@ -276,13 +276,12 @@ def analyser_avec_claude(activites, charge, km_semaine, km_run=0):
         "Propose exactement 3 seances adaptees au profil medical (50+, synovite genou)\n"
         "Pour chaque seance : jour suggere, type, duree, intensite precise, risque articulaire 🟢/🟡/🔴\n\n"
         "## SEANCES_JSON\n"
-        "Reponds avec un bloc JSON strictement dans ce format (sans markdown autour) :\n"
-        "[\n"
-        "  {\"titre\": \"Zwift Z2 recuperation\", \"type\": \"indoor\", \"meta\": \"45-60 min · Z2 · 120-145W\", \"risque\": \"faible\", \"tags\": [\"Zwift\", \"Z2\"]},\n"
-        "  {\"titre\": \"Run facile\", \"type\": \"run\", \"meta\": \"5 km max · FC < 150 bpm · terrain plat\", \"risque\": \"faible\", \"tags\": [\"Course\", \"Endurance\"]},\n"
-        "  {\"titre\": \"Velo route endurance\", \"type\": \"bike\", \"meta\": \"60-75 min · Z2/Z3 · 2x8 min Z3\", \"risque\": \"modere\", \"tags\": [\"Velo outdoor\", \"Sweet spot\"]}\n"
-        "]\n"
-        "Le JSON doit etre la derniere chose de ta reponse, apres la section ## SEANCES_JSON"
+        "Termine OBLIGATOIREMENT par un tableau JSON valide de 3 seances.\n"
+        "Format EXACT (copie ce format, adapte les valeurs) :\n"
+        "[{\"titre\":\"Zwift Z2\",\"type\":\"indoor\",\"meta\":\"45 min Z2 120-145W\",\"risque\":\"faible\",\"tags\":[\"Zwift\",\"Z2\"]},"
+        "{\"titre\":\"Run facile\",\"type\":\"run\",\"meta\":\"5km FC<150\",\"risque\":\"faible\",\"tags\":[\"Course\",\"Endurance\"]},"
+        "{\"titre\":\"Velo Z2/Z3\",\"type\":\"bike\",\"meta\":\"60min 2x8min Z3\",\"risque\":\"modere\",\"tags\":[\"Velo outdoor\",\"Z3\"]}]\n"
+        "NE PAS mettre de markdown autour du JSON. Le JSON doit etre la DERNIERE chose de ta reponse."
     )
 
     msg = client.messages.create(
