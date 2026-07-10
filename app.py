@@ -293,19 +293,45 @@ def analyser_avec_claude(activites, charge, km_semaine, km_run=0):
     full_text = msg.content[0].text
 
     # Extrait le JSON des seances de la reponse
+    import re as _re
     seances = []
-    try:
-        import re
-        json_match = re.search(r"\[[\s\S]*?\]", full_text[full_text.rfind("## SEANCES_JSON"):])
-        if json_match:
-            seances = json.loads(json_match.group())
-    except Exception:
-        pass
-
-    # Texte de l analyse sans le bloc JSON
     analyse_text = full_text
+
+    # Essaie plusieurs patterns pour trouver le JSON
+    def try_parse_json(s):
+        try:
+            candidate = json.loads(s)
+            if isinstance(candidate, list) and len(candidate) > 0:
+                if all(isinstance(x, dict) and "titre" in x for x in candidate):
+                    return candidate
+        except Exception:
+            pass
+        return None
+
+    # Pattern 1: bloc ```json ... ```
+    m1 = _re.search(r'```json\s*(\[.*?\])\s*```', full_text, _re.DOTALL)
+    if m1:
+        seances = try_parse_json(m1.group(1)) or []
+
+    # Pattern 2: bloc ``` ... ```
+    if not seances:
+        m2 = _re.search(r'```\s*(\[.*?\])\s*```', full_text, _re.DOTALL)
+        if m2:
+            seances = try_parse_json(m2.group(1)) or []
+
+    # Pattern 3: JSON brut avec "titre"
+    if not seances:
+        m3 = _re.search(r'(\[\s*\{"titre".*?\}\s*\])', full_text, _re.DOTALL)
+        if m3:
+            seances = try_parse_json(m3.group(1)) or []
+
+    # Nettoie le texte affiche
     if "## SEANCES_JSON" in full_text:
         analyse_text = full_text[:full_text.rfind("## SEANCES_JSON")].strip()
+    else:
+        # Supprime les blocs de code du texte
+        analyse_text = _re.sub(r'```[\s\S]*?```', '', full_text).strip()
+
 
     result = {"texte": analyse_text, "seances": seances}
     _cache[cache_key] = {"data": result, "ts": time.time()}
