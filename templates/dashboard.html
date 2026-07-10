@@ -178,6 +178,7 @@ function render(d) {
   }).join('');
 
   document.getElementById('updated').textContent = `Mis à jour à ${d.updated_at} · ${d.nb_activites} activités sur 90j`;
+  setTimeout(() => renderChart(d.charge.historique), 50);
 
   document.getElementById('main').innerHTML = `
 
@@ -217,6 +218,20 @@ function render(d) {
         <div class="val">Déc<span class="unit">2026</span></div>
         <div class="sub">Avant Noël · 21,1 km</div>
         <span class="badge" style="background:#1a2a3a;color:#7ab3d4">~24 semaines</span>
+      </div>
+    </div>
+
+    <!-- CTL/ATL/TSB Chart -->
+    <div class="section">
+      <div class="section-title">📈 Forme · Fatigue · Fraîcheur — 30 derniers jours</div>
+      <div style="position:relative;height:160px;margin-bottom:8px" id="ctl-chart"></div>
+      <div style="display:flex;gap:20px;justify-content:center;margin-top:8px">
+        <span style="font-size:12px;color:#FC4C02">● CTL (forme)</span>
+        <span style="font-size:12px;color:#7c3aed">● ATL (fatigue)</span>
+        <span style="font-size:12px;color:#22c55e">● TSB (fraîcheur)</span>
+      </div>
+      <div style="font-size:11px;color:#555;text-align:center;margin-top:6px">
+        TSB > 0 = frais · TSB -10 à 0 = équilibre · TSB &lt; -20 = surcharge
       </div>
     </div>
 
@@ -332,6 +347,65 @@ function selectWorkout(card, name) {
 function refresh() {
   document.getElementById('main').innerHTML = '<div class="loader"><div class="spin">🚴</div><p style="margin-top:16px;font-size:14px">Rechargement...</p></div>';
   loadData(true);
+}
+
+function renderChart(historique) {
+  const el = document.getElementById('ctl-chart');
+  if (!el || !historique || historique.length === 0) return;
+
+  const W = el.clientWidth || 780;
+  const H = 160;
+  const pad = { top: 10, right: 10, bottom: 24, left: 32 };
+  const iW = W - pad.left - pad.right;
+  const iH = H - pad.top - pad.bottom;
+
+  // Valeurs min/max pour echelle
+  const allVals = historique.flatMap(h => [h.CTL, h.ATL, h.TSB]);
+  const minV = Math.min(...allVals) - 5;
+  const maxV = Math.max(...allVals) + 5;
+  const scaleY = v => pad.top + iH - ((v - minV) / (maxV - minV)) * iH;
+  const scaleX = i => pad.left + (i / (historique.length - 1)) * iW;
+
+  // Construit les polylines
+  const pts = (key) => historique.map((h, i) => scaleX(i).toFixed(1) + ',' + scaleY(h[key]).toFixed(1)).join(' ');
+
+  // Zone TSB coloree
+  const tsbFill = historique.map((h, i) => {
+    const x = scaleX(i).toFixed(1);
+    const y = scaleY(h.TSB).toFixed(1);
+    const y0 = scaleY(0).toFixed(1);
+    return { x, y, y0, pos: h.TSB >= 0 };
+  });
+
+  // Ligne zero
+  const y0 = scaleY(0).toFixed(1);
+
+  // Labels axe X (toutes les 5 entrees)
+  const xLabels = historique.filter((_, i) => i % 5 === 0 || i === historique.length - 1).map((h, _, arr) => {
+    const origIdx = historique.indexOf(h);
+    return '<text x="' + scaleX(origIdx).toFixed(1) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9" fill="#555">' + h.date.slice(5) + '</text>';
+  }).join('');
+
+  // Labels axe Y
+  const yLabels = [minV, 0, maxV].map(v => {
+    return '<text x="' + (pad.left - 4) + '" y="' + (scaleY(v) + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="#555">' + Math.round(v) + '</text>';
+  }).join('');
+
+  el.innerHTML = '<svg width="100%" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+    // Grille
+    '<line x1="' + pad.left + '" y1="' + y0 + '" x2="' + (W - pad.right) + '" y2="' + y0 + '" stroke="#333" stroke-width="1" stroke-dasharray="3,3"/>' +
+    '<line x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (H - pad.bottom) + '" stroke="#2a2a2a" stroke-width="1"/>' +
+    // TSB area
+    '<polyline points="' + pts('TSB') + '" fill="none" stroke="#22c55e" stroke-width="1.5" opacity="0.7"/>' +
+    // ATL
+    '<polyline points="' + pts('ATL') + '" fill="none" stroke="#7c3aed" stroke-width="1.5" opacity="0.8"/>' +
+    // CTL
+    '<polyline points="' + pts('CTL') + '" fill="none" stroke="#FC4C02" stroke-width="2"/>' +
+    // Dot aujourd hui
+    '<circle cx="' + scaleX(historique.length - 1).toFixed(1) + '" cy="' + scaleY(historique[historique.length-1].CTL).toFixed(1) + '" r="3" fill="#FC4C02"/>' +
+    '<circle cx="' + scaleX(historique.length - 1).toFixed(1) + '" cy="' + scaleY(historique[historique.length-1].TSB).toFixed(1) + '" r="3" fill="#22c55e"/>' +
+    yLabels + xLabels +
+    '</svg>';
 }
 
 loadData();
