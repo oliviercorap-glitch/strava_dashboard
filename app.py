@@ -1,23 +1,22 @@
 """
 Strava Dashboard — Application Flask
 =====================================
-Dashboard personnel temps réel : FTP, CTL/ATL/TSB, recommandations d'entraînement
-Protégé par mot de passe simple
+Dashboard personnel temps réel : FTP, CTL/ATL/TSB, recommandations d'entrainement
+Protege par mot de passe simple
 
 Variables d'environnement (Railway) :
   STRAVA_CLIENT_ID
   STRAVA_CLIENT_SECRET
   STRAVA_REFRESH_TOKEN
   ANTHROPIC_API_KEY
-  DASHBOARD_PASSWORD     — mot de passe d'accès au dashboard
-  SECRET_KEY             — clé secrète Flask (chaîne aléatoire)
+  DASHBOARD_PASSWORD
+  SECRET_KEY
 """
 
 import os, json, time, hashlib
 from collections import defaultdict
 from datetime import datetime, timedelta, date
 from functools import wraps
-from pathlib import Path
 
 import requests
 import anthropic
@@ -36,10 +35,9 @@ OBJECTIFS = {
     "ftp_actuelle":  201,
     "ftp_cible":     230,
     "km_sem_cible":  120,
-    "semi_date":     "décembre 2026",
+    "semi_date":     "decembre 2026",
 }
 
-# Cache simple en mémoire (évite de re-appeler Strava/Claude à chaque refresh)
 _cache = {}
 CACHE_TTL = 1800  # 30 minutes
 
@@ -82,7 +80,7 @@ def logout():
 
 def rafraichir_token():
     cached = _cache.get("strava_token")
-    if cached and cached["expires_at"] > time.time() + 300:
+    if cached and cached.get("expires_at", 0) > time.time() + 300:
         return cached["access_token"]
 
     resp = requests.post("https://www.strava.com/oauth/token", data={
@@ -98,7 +96,8 @@ def rafraichir_token():
 
 
 def get_activites(jours=90):
-    cache_key = f"activites_{jours}"
+    """Recupere toutes les activites des N derniers jours, triees du plus recent au plus ancien."""
+    cache_key = "activites_{}".format(jours)
     cached = _cache.get(cache_key)
     if cached and time.time() - cached["ts"] < CACHE_TTL:
         return cached["data"]
@@ -106,20 +105,30 @@ def get_activites(jours=90):
     token = rafraichir_token()
     depuis = int((datetime.now() - timedelta(days=jours)).timestamp())
     activites, page = [], 1
+
     while True:
         resp = requests.get(
             "https://www.strava.com/api/v3/athlete/activities",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": "Bearer " + token},
             params={"after": depuis, "per_page": 100, "page": page},
             timeout=15,
         )
         resp.raise_for_status()
         batch = resp.json()
-        if not batch: break
+        if not batch:
+            break
         activites.extend(batch)
-        if len(batch) < 100: break
+        if len(batch) < 100:
+            break
         page += 1
         time.sleep(0.3)
+
+    # Tri explicite par date decroissante — plus recent en premier
+    activites = sorted(
+        activites,
+        key=lambda x: x.get("start_date_local", ""),
+        reverse=True
+    )
 
     _cache[cache_key] = {"data": activites, "ts": time.time()}
     return activites
@@ -134,7 +143,7 @@ def formater_activite(a):
         "date":          a.get("start_date_local", "")[:10],
         "distance_km":   round(a["distance"] / 1000, 1),
         "duree_h":       round(duree_h, 2),
-        "duree":         f"{int(duree_h)}h{int((duree_h % 1) * 60):02d}",
+        "duree":         "{}h{:02d}".format(int(duree_h), int((duree_h % 1) * 60)),
         "elevation_m":   int(a.get("total_elevation_gain", 0)),
         "vitesse_moy":   round(a.get("average_speed", 0) * 3.6, 1),
         "fc_moy":        a.get("average_heartrate"),
@@ -171,21 +180,30 @@ def calculer_charge(activites):
         ctl = ctl + k_ctl * (charge - ctl)
         atl = atl + k_atl * (charge - atl)
         historique.append({
-            "date": d, "charge": round(charge, 1),
-            "CTL": round(ctl, 1), "ATL": round(atl, 1),
-            "TSB": round(ctl - atl, 1)
+            "date": d,
+            "charge": round(charge, 1),
+            "CTL": round(ctl, 1),
+            "ATL": round(atl, 1),
+            "TSB": round(ctl - atl, 1),
         })
 
     dernier = historique[-1]
     tsb = dernier["TSB"]
-    if tsb > 10:    interp = "Forme fraîche — bon moment pour un effort intense"
-    elif tsb > -10: interp = "Équilibre — entraînement modéré conseillé"
-    elif tsb > -30: interp = "Fatigue accumulée — surveiller la récupération"
-    else:           interp = "Surcharge — récupération prioritaire"
+    if tsb > 10:
+        interp = "Forme fraiche - bon moment pour un effort intense"
+    elif tsb > -10:
+        interp = "Equilibre - entrainement modere conseille"
+    elif tsb > -30:
+        interp = "Fatigue accumulee - surveiller la recuperation"
+    else:
+        interp = "Surcharge - recuperation prioritaire"
 
     return {
-        "CTL": dernier["CTL"], "ATL": dernier["ATL"], "TSB": dernier["TSB"],
-        "interpretation": interp, "historique": historique[-30:]
+        "CTL": dernier["CTL"],
+        "ATL": dernier["ATL"],
+        "TSB": dernier["TSB"],
+        "interpretation": interp,
+        "historique": historique[-30:],
     }
 
 
@@ -196,42 +214,47 @@ def calculer_charge(activites):
 SYSTEM_PROMPT = """Tu es un coach cyclisme et running expert, conseiller personnel d'Olivier.
 
 PROFIL :
-- FTP actuelle : 201W (Garmin) → cible 230W
-- Volume vélo cible : 120 km/semaine
-- Objectif running : semi-marathon avant Noël 2026
+- FTP actuelle : 201W (Garmin) -> cible 230W
+- Volume velo cible : 120 km/semaine
+- Objectif running : semi-marathon avant Noel 2026
 
-Ton analyse est courte, directe, en français, orientée action.
-Réponds toujours en markdown avec des titres ## et des listes - pour structurer.
+Ton analyse est courte, directe, en francais, orientee action.
+Reponds toujours en markdown avec des titres ## et des listes - pour structurer.
 """
 
 def analyser_avec_claude(activites, charge, km_semaine):
-    cache_key = f"analyse_{hashlib.md5(str(len(activites)).encode()).hexdigest()[:8]}_{charge['CTL']}"
+    # Cle de cache basee sur la date du jour + CTL (change si nouvelles activites)
+    today_str = date.today().isoformat()
+    cache_key = "analyse_{}_{}".format(today_str, charge["CTL"])
     cached = _cache.get(cache_key)
     if cached and time.time() - cached["ts"] < CACHE_TTL:
         return cached["data"]
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    # 5 dernières activités
+    # 5 dernieres activites (deja triees du plus recent au plus ancien)
     recentes = activites[:5]
     recentes_txt = "\n".join(
-        f"- {a['date']} | {a['type']} | {a['distance_km']} km | {a['elevation_m']}m D+ | "
-        f"{a['duree']} | FC:{a['fc_moy'] or '?'} | {a['puissance_moy'] or '?'}W"
+        "- {} | {} | {} km | {}m D+ | {} | FC:{} | {}W".format(
+            a["date"], a["type"], a["distance_km"], a["elevation_m"],
+            a["duree"], a["fc_moy"] or "?", a["puissance_moy"] or "?"
+        )
         for a in recentes
     )
 
     prompt = (
-        f"Date : {datetime.now().strftime('%d %B %Y')}\n\n"
-        f"MÉTRIQUES\nCTL={charge['CTL']} ATL={charge['ATL']} TSB={charge['TSB']}\n"
-        f"Volume semaine en cours : {km_semaine} km / 120 km objectif\n\n"
-        f"5 DERNIÈRES ACTIVITÉS\n{recentes_txt}\n\n"
+        "Date : {}\n\n".format(datetime.now().strftime("%d %B %Y")) +
+        "METRIQUES\nCTL={} ATL={} TSB={}\n".format(charge["CTL"], charge["ATL"], charge["TSB"]) +
+        "Volume semaine en cours : {} km / 120 km objectif\n\n".format(km_semaine) +
+        "5 DERNIERES ACTIVITES (de la plus recente a la plus ancienne)\n" +
+        recentes_txt + "\n\n" +
         "Analyse en 3 sections courtes :\n"
-        "## Bilan récent\n(2-3 phrases sur les dernières sorties)\n\n"
+        "## Bilan recent\n(2-3 phrases sur les dernieres sorties)\n\n"
         "## Trajectoire objectifs\n"
         "- FTP 230W : suis-je sur la bonne voie ?\n"
-        "- Semi-marathon décembre : base aérobie suffisante ?\n\n"
+        "- Semi-marathon decembre : base aerobie suffisante ?\n\n"
         "## Recommandation pour les 7 prochains jours\n"
-        "(3 séances concrètes avec type, durée, intensité)"
+        "(3 seances concretes avec type, duree, intensite)"
     )
 
     msg = client.messages.create(
@@ -258,20 +281,14 @@ def index():
 @app.route("/api/data")
 @login_required
 def api_data():
-    """Endpoint JSON appelé par le dashboard en AJAX."""
     try:
+        # Recupere et trie les activites (plus recent en premier)
         activites_brutes = get_activites(jours=JOURS_HISTORIQUE)
-        # Tri explicite par date decroissante (plus recent en premier)
-        activites_brutes = sorted(
-            activites_brutes,
-            key=lambda x: x.get('start_date_local', ''),
-            reverse=True
-        )
         activites = [formater_activite(a) for a in activites_brutes]
 
         charge = calculer_charge(activites)
 
-        # Volume semaine en cours
+        # Volume semaine en cours (lundi -> aujourd'hui)
         today_d = date.today()
         debut_sem = today_d - timedelta(days=today_d.weekday())
         km_semaine = round(sum(
@@ -288,26 +305,27 @@ def api_data():
         stats = {k: {
             "nb": v["nb"],
             "km": round(v["km"], 1),
-            "h":  round(v["h"], 1)
+            "h":  round(v["h"], 1),
         } for k, v in sorted(par_type.items(), key=lambda x: -x[1]["nb"])}
 
         # Analyse Claude
         analyse_md = analyser_avec_claude(activites, charge, km_semaine)
 
-        # 10 dernières activités pour l'affichage
+        # 10 dernieres activites pour l'affichage (deja triees)
         recentes = activites[:10]
 
         return jsonify({
-            "ok": True,
-            "charge": charge,
-            "km_semaine": km_semaine,
+            "ok":            True,
+            "charge":        charge,
+            "km_semaine":    km_semaine,
             "reste_semaine": round(max(0, 120 - km_semaine), 1),
-            "nb_activites": len(activites),
-            "stats": stats,
-            "recentes": recentes,
-            "analyse": analyse_md,
-            "updated_at": datetime.now().strftime("%H:%M"),
-            "objectifs": OBJECTIFS,
+            "nb_activites":  len(activites),
+            "stats":         stats,
+            "recentes":      recentes,
+            "analyse":       analyse_md,
+            "updated_at":    datetime.now().strftime("%H:%M"),
+            "objectifs":     OBJECTIFS,
+            "debug_first":   activites[0]["date"] if activites else "vide",
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -316,9 +334,8 @@ def api_data():
 @app.route("/api/refresh")
 @login_required
 def api_refresh():
-    """Vide le cache pour forcer un rechargement complet."""
     _cache.clear()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "message": "Cache vide"})
 
 
 if __name__ == "__main__":
