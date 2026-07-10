@@ -164,7 +164,7 @@ function actBg(type) {
 function render(d) {
   const tsbc = tsb_color(d.charge.TSB);
   const ftp_pct = Math.min(100, Math.round((201/230)*100));
-  const km_pct  = Math.min(100, Math.round((d.km_semaine/120)*100));
+  const km_pct  = Math.min(100, Math.round(((d.km_semaine||0)/120)*100));
 
   // CTL history for mini-chart
   const hist = d.charge.historique || [];
@@ -200,10 +200,11 @@ function render(d) {
         <span class="badge" style="background:${tsbc.bg};color:${tsbc.fg};border:1px solid ${tsbc.fg}33">${tsbc.badge}</span>
       </div>
       <div class="kpi">
-        <div class="lbl">Volume semaine</div>
+        <div class="lbl">Volume semaine — Vélo</div>
         <div class="val">${d.km_semaine}<span class="unit">km</span></div>
         <div class="sub">Reste ${d.reste_semaine} km / 120 km</div>
         <div class="prog-bar"><div class="prog-fill" style="width:${km_pct}%;background:#FC4C02"></div></div>
+        <div style="margin-top:8px;font-size:12px;color:#777">🏃 Run : ${d.km_run_semaine || 0} km cette semaine</div>
       </div>
       <div class="kpi">
         <div class="lbl">FTP actuelle</div>
@@ -228,14 +229,14 @@ function render(d) {
     <!-- Séances recommandées -->
     <div class="section">
       <div class="section-title">💪 Quelle séance aujourd'hui ?</div>
-      <div class="tab-row">
+        <div class="tab-row">
         <button class="tab active" onclick="filterWorkouts('all',this)">Tout</button>
         <button class="tab" onclick="filterWorkouts('bike',this)">Vélo outdoor</button>
         <button class="tab" onclick="filterWorkouts('indoor',this)">Zwift</button>
         <button class="tab" onclick="filterWorkouts('run',this)">Course</button>
       </div>
       <div class="workout-grid" id="wk-grid">
-        ${workoutsHTML()}
+        ${workoutsHTML(d.seances && d.seances.length > 0 ? d.seances : null)}
       </div>
       <div id="wk-detail" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid #222">
         <button id="wk-btn" style="width:100%;padding:10px;border:1px solid #333;border-radius:8px;
@@ -267,32 +268,50 @@ function render(d) {
   `;
 }
 
-const WORKOUTS = [
-  { type:'bike', title:'Endurance gravel', meta:'75 min · Z2 · IF 0.65-0.72', tags:[['tag-bike','Vélo outdoor'],['tag-z2','Z2']] },
-  { type:'bike', title:'Intervalles seuil FTP', meta:'75 min · 3×15 min à 95-105% FTP · TSS ~85', tags:[['tag-bike','Vélo outdoor'],['tag-seuil','Seuil']] },
-  { type:'indoor', title:'Zwift VO2max', meta:'60 min · 5×5 min à 115-120% FTP', tags:[['tag-indoor','Zwift'],['tag-seuil','VO2max']] },
-  { type:'indoor', title:'Zwift sweet spot', meta:'75 min · 2×20 min à 88-93% FTP', tags:[['tag-indoor','Zwift'],['tag-z2','Sweet spot']] },
-  { type:'run', title:'Sortie longue', meta:'60-80 min · allure conversationnelle', tags:[['tag-run','Course'],['tag-z2','Endurance']] },
-  { type:'run', title:'Fractionné 10×400m', meta:'50 min · récup 90s · améliore VMA', tags:[['tag-run','Course'],['tag-seuil','VMA']] },
-  { type:'run', title:'Tempo 30 min', meta:'45 min total · 30 min à allure semi', tags:[['tag-run','Course'],['tag-seuil','Seuil']] },
-  { type:'bike', title:'Récupération active', meta:'45 min · Z1 uniquement · si TSB très négatif', tags:[['tag-bike','Vélo'],['tag-z2','Récup']] },
-];
+let _seances = [];
+let _filter = 'all';
 
-function workoutsHTML(filter='all') {
-  return WORKOUTS.filter(w => filter==='all' || w.type===filter).map((w,i) => `
-    <div class="workout-card" data-type="${w.type}" data-title="${w.title}"
-         onclick="selectWorkout(this,'${w.title}')">
-      <div class="wk-title">${w.title}</div>
-      <div class="wk-meta">${w.meta}</div>
-      ${w.tags.map(([cls,lbl]) => `<span class="wk-tag ${cls}">${lbl}</span>`).join('')}
-    </div>
-  `).join('');
+function risqueEmoji(r) {
+  if (!r) return '';
+  const r2 = r.toLowerCase();
+  if (r2.includes('faible')) return '🟢 Faible';
+  if (r2.includes('mod')) return '🟡 Modéré';
+  return '🔴 Élevé';
+}
+function risqueCouleur(r) {
+  if (!r) return '#666';
+  const r2 = r.toLowerCase();
+  if (r2.includes('faible')) return '#22c55e';
+  if (r2.includes('mod')) return '#f59e0b';
+  return '#ef4444';
+}
+
+function workoutsHTML(seances) {
+  if (seances && seances.length > 0) _seances = seances;
+  const list = _filter === 'all' ? _seances : _seances.filter(w => w.type === _filter);
+  if (list.length === 0) return '<div style="color:#666;font-size:13px;padding:12px 0">Aucune séance pour ce filtre.</div>';
+  return list.map(w => {
+    const tags = (w.tags||[]).map(t => {
+      const cls = w.type==='indoor' ? 'tag-indoor' : w.type==='run' ? 'tag-run' : 'tag-bike';
+      return '<span class="wk-tag ' + cls + '">' + t + '</span>';
+    }).join('');
+    const titre = (w.titre||w.title||'Séance').replace(/'/g, "\'");
+    const rc = risqueCouleur(w.risque);
+    const re = risqueEmoji(w.risque);
+    return '<div class="workout-card" data-type="' + (w.type||'bike') + '" onclick="selectWorkout(this,\'' + titre + '\')">' +
+      '<div class="wk-title">' + (w.titre||w.title||'Séance') + '</div>' +
+      '<div class="wk-meta">' + (w.meta||'') + '</div>' +
+      '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + tags +
+      (w.risque ? '<span style="font-size:11px;color:' + rc + ';font-weight:500">' + re + '</span>' : '') +
+      '</div></div>';
+  }).join('');
 }
 
 function filterWorkouts(type, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('wk-grid').innerHTML = workoutsHTML(type);
+  _filter = type;
+  document.getElementById('wk-grid').innerHTML = workoutsHTML(null);
   document.getElementById('wk-detail').style.display = 'none';
 }
 
