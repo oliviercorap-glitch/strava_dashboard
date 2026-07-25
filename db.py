@@ -93,6 +93,25 @@ def get_debrief(activity_id: int):
             return dict(row) if row else None
 
 
+def get_ressentis_recents(depuis_date) -> list[dict]:
+    """
+    Retourne les ressentis enregistrés depuis `depuis_date` (incluse), du plus
+    récent au plus ancien. Chaque élément : {activity_date, sport, ressenti}.
+    Utilisé pour injecter le contexte subjectif dans le bilan hebdo.
+    """
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT activity_date, sport, ressenti
+                FROM debriefs
+                WHERE ressenti IS NOT NULL
+                  AND ressenti <> ''
+                  AND activity_date >= %s
+                ORDER BY activity_date DESC;
+            """, (depuis_date,))
+            return [dict(r) for r in cur.fetchall()]
+
+
 def get_debriefs_for(activity_ids: list[int]) -> dict:
     """Récupère en une requête les débriefs de plusieurs activités.
     Retourne un dict {activity_id: {ressenti, debrief}} pour l'affichage liste."""

@@ -259,9 +259,12 @@ FORMAT DE REPONSE :
 - Markdown avec titres ## et listes -
 """
 
-def analyser_avec_claude(activites, charge, km_semaine, km_run=0):
+def analyser_avec_claude(activites, charge, km_semaine, km_run=0, ressentis=None):
     today_str = date.today().isoformat()
-    cache_key = "analyse_{}_{}".format(today_str, charge["CTL"])
+    # La clé de cache inclut le nombre de ressentis : si tu ajoutes un ressenti,
+    # le bilan est recalculé au lieu de resservir une version obsolète.
+    nb_ressentis = len(ressentis) if ressentis else 0
+    cache_key = "analyse_{}_{}_{}".format(today_str, charge["CTL"], nb_ressentis)
     cached = _cache.get(cache_key)
     if cached and time.time() - cached["ts"] < CACHE_TTL:
         return cached["data"]
@@ -277,15 +280,33 @@ def analyser_avec_claude(activites, charge, km_semaine, km_run=0):
         for a in recentes
     )
 
+    # Ressentis bruts des 7 derniers jours (voix directe d'Olivier, non filtrée)
+    ressentis_txt = ""
+    if ressentis:
+        lignes = "\n".join(
+            "- {} | {} : « {} »".format(
+                r.get("activity_date"), r.get("sport", "?"), r.get("ressenti", "")
+            )
+            for r in ressentis
+        )
+        ressentis_txt = (
+            "\nRESSENTIS D'OLIVIER (7 derniers jours, ses mots exacts — a prendre en compte\n"
+            "dans le bilan : ils expliquent souvent ce que les chiffres seuls ne disent pas,\n"
+            "comme la chaleur, la fatigue, une gene, une bonne sensation)\n" + lignes + "\n"
+        )
+
     prompt = (
         "Date : {}\n\n".format(datetime.now().strftime("%d %B %Y")) +
         "METRIQUES\nCTL={} ATL={} TSB={}\n".format(charge["CTL"], charge["ATL"], charge["TSB"]) +
         "Volume velo semaine : {} km | Run semaine : {} km\n\n".format(km_semaine, km_run) +
         "5 DERNIERES ACTIVITES (de la plus recente a la plus ancienne)\n" +
-        recentes_txt + "\n\n" +
+        recentes_txt + "\n" +
+        ressentis_txt + "\n" +
         "Reponds en 4 sections :\n\n"
         "## Bilan recent\n"
-        "(2-3 phrases sur les dernieres sorties, FC, intensite, regularite)\n\n"
+        "(2-3 phrases sur les dernieres sorties, FC, intensite, regularite. Croise les chiffres\n"
+        "avec les ressentis d'Olivier quand ils sont disponibles : si un ressenti explique une\n"
+        "donnee, dis-le explicitement plutot que de rester dans l'hypothese.)\n\n"
         "## Trajectoire objectif\n"
         "- Semi-marathon decembre : la base aerobie running progresse-t-elle ? Volume suffisant ?\n"
         "- Velo : sert-il bien de soutien aerobie sans fatiguer les jambes de course ?\n"
@@ -410,7 +431,16 @@ def api_data():
             "h":  round(v["h"], 1),
         } for k, v in sorted(par_type.items(), key=lambda x: -x[1]["nb"])}
 
-        analyse_result = analyser_avec_claude(activites, charge, km_semaine, km_run_semaine)
+        # Ressentis des 7 derniers jours, pour enrichir le bilan (best effort)
+        ressentis_recents = []
+        try:
+            depuis_7j = (today_d - timedelta(days=7)).isoformat()
+            ressentis_recents = db.get_ressentis_recents(depuis_7j)
+        except Exception as e:
+            print(f"[db] lecture ressentis récents KO : {e}")
+
+        analyse_result = analyser_avec_claude(
+            activites, charge, km_semaine, km_run_semaine, ressentis=ressentis_recents)
         analyse_md = analyse_result["texte"]
         seances_dynamiques = analyse_result["seances"]
 
