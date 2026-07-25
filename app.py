@@ -31,6 +31,7 @@ import db
 import coach
 import intervals as intervals_mod
 import strava_detail
+import hr_analysis
 
 load_dotenv()
 
@@ -516,19 +517,27 @@ def api_ressenti():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Sauvegarde KO : {e}"}), 500
 
-    # Détecte les intervalles (laps + streams) — best effort
+    # Récupère les détails Strava (laps + streams) une seule fois — best effort
     intervals_result = None
+    hr_txt = ""
     try:
         token = rafraichir_token()
         detail = strava_detail.get_activity_detail(activity_id, token, sport)
+        # Détection d'intervalles
         intervals_result = intervals_mod.extract_intervals(
             activite, detail["laps"], detail["streams"], sport)
+        # Analyse FC détaillée à partir du stream (répartition zones, dérive, Z4+)
+        streams = detail.get("streams") or {}
+        hr_stream = streams.get("heartrate")
+        if hr_stream:
+            hr_data = hr_analysis.analyser_fc(hr_stream, streams.get("time"))
+            hr_txt = hr_analysis.formater_pour_coach(hr_data)
     except Exception as e:
-        print(f"[intervals] détection KO pour {activity_id} : {e}")
+        print(f"[detail] récupération/analyse KO pour {activity_id} : {e}")
 
     # Génère le débrief coach
     try:
-        debrief = coach.generate_debrief(activite, ressenti, intervals_result)
+        debrief = coach.generate_debrief(activite, ressenti, intervals_result, hr_txt)
         db.save_debrief(activity_id, debrief)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Coach KO : {e}"}), 500

@@ -99,7 +99,8 @@ def format_intervals(intervals: dict) -> str:
     return "\n".join(lines)
 
 
-def generate_debrief(activity: dict, feeling: str, intervals: dict = None) -> str:
+def generate_debrief(activity: dict, feeling: str, intervals: dict = None,
+                     hr_txt: str = "") -> str:
     """
     activity  : dict résumé (formater_activite)
     feeling   : ressenti écrit par Olivier
@@ -110,6 +111,8 @@ def generate_debrief(activity: dict, feeling: str, intervals: dict = None) -> st
     intervals_txt = format_intervals(intervals)
 
     content = f"MÉTRIQUES OBJECTIVES :\n{metrics_txt}\n\n"
+    if hr_txt:
+        content += f"{hr_txt}\n\n"
     if intervals_txt:
         content += f"DÉTAIL DES INTERVALLES :\n{intervals_txt}\n\n"
     content += f"RESSENTI D'OLIVIER :\n{feeling_txt}"
