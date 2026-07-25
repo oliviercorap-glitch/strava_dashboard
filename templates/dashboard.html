@@ -68,6 +68,31 @@
   .act-stats { display: flex; gap: 12px; color: #777; font-size: 12px; }
   .act-stat-val { color: #bbb; font-weight: 500; }
 
+  /* Débrief coach post-séance */
+  .act-item { padding: 10px 0; border-bottom: 1px solid #222; }
+  .act-item:last-child { border-bottom: none; }
+  .act-item .act-row { border-bottom: none; padding: 0; }
+  .coach-toggle { background: transparent; border: none; color: #FC4C02;
+                  font-size: 12px; cursor: pointer; padding: 4px 0 0 40px;
+                  display: block; }
+  .coach-toggle:hover { color: #ff6a2b; }
+  .coach-block { margin: 8px 0 4px 40px; }
+  .ressenti-input { width: 100%; background: #111; color: #eee;
+                    border: 1px solid #333; border-radius: 8px; padding: 8px;
+                    font-size: 13px; resize: vertical; font-family: inherit; }
+  .ressenti-input:focus { outline: none; border-color: #FC4C02; }
+  .btn-debrief, .btn-reressenti { margin-top: 6px; padding: 6px 14px; border: none;
+                    border-radius: 8px; background: #FC4C02; color: #fff;
+                    cursor: pointer; font-size: 12px; }
+  .btn-reressenti { background: #2a2a2a; color: #aaa; }
+  .debrief-loading { color: #FC4C02; font-style: italic; font-size: 13px; padding: 8px 0; }
+  .debrief-affiche { background: #141414; border-left: 2px solid #FC4C02;
+                     border-radius: 0 8px 8px 0; padding: 10px 12px; }
+  .debrief-label { font-weight: 600; color: #FC4C02; font-size: 12px; margin-bottom: 5px; }
+  .debrief-texte { color: #ccc; font-size: 13px; line-height: 1.6; }
+  .ressenti-rappel { color: #666; font-size: 11px; font-style: italic; margin-top: 8px; }
+  .debrief-erreur { color: #f87171; font-size: 12px; }
+
   /* Séances recommandées */
   .workout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
                   gap: 10px; }
@@ -109,6 +134,7 @@
   @media (max-width: 520px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); }
     .act-stats { display: none; }
+    .coach-block, .coach-toggle { margin-left: 0; padding-left: 0; }
   }
 </style>
 </head>
@@ -161,9 +187,13 @@ function actBg(type) {
   return '#2a2a2a';
 }
 
+// Échappe le HTML pour l'affichage sûr des ressentis/débriefs
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function render(d) {
   const tsbc = tsb_color(d.charge.TSB);
-  const ftp_pct = Math.min(100, Math.round((201/230)*100));
   const km_pct  = Math.min(100, Math.round(((d.km_semaine||0)/120)*100));
 
   // CTL history for mini-chart
@@ -203,21 +233,21 @@ function render(d) {
       <div class="kpi">
         <div class="lbl">Volume semaine — Vélo</div>
         <div class="val">${d.km_semaine}<span class="unit">km</span></div>
-        <div class="sub">Reste ${d.reste_semaine} km / 120 km</div>
+        <div class="sub">Soutien aérobie · sorties groupe</div>
         <div class="prog-bar"><div class="prog-fill" style="width:${km_pct}%;background:#FC4C02"></div></div>
         <div style="margin-top:8px;font-size:12px;color:#777">🏃 Run : ${d.km_run_semaine || 0} km cette semaine</div>
       </div>
       <div class="kpi">
-        <div class="lbl">FTP actuelle</div>
-        <div class="val">201<span class="unit">W</span></div>
-        <div class="sub">Cible : 230W</div>
-        <div class="prog-bar"><div class="prog-fill" style="width:${ftp_pct}%;background:#7c3aed"></div></div>
+        <div class="lbl">Objectif principal</div>
+        <div class="val">🏃<span class="unit">Semi</span></div>
+        <div class="sub">Course à pied · priorité</div>
+        <span class="badge" style="background:#1a3a20;color:#7ad48a">Focus running</span>
       </div>
       <div class="kpi">
         <div class="lbl">Semi-marathon</div>
         <div class="val">Déc<span class="unit">2026</span></div>
         <div class="sub">Avant Noël · 21,1 km</div>
-        <span class="badge" style="background:#1a2a3a;color:#7ab3d4">~24 semaines</span>
+        <span class="badge" style="background:#1a2a3a;color:#7ab3d4">~21 semaines</span>
       </div>
     </div>
 
@@ -264,24 +294,99 @@ function render(d) {
     <div class="section">
       <div class="section-title">📋 Dernières activités</div>
       ${d.recentes.map(a => `
-        <div class="act-row">
-          <div class="act-type" style="background:${actBg(a.type)}">${actIcon(a.type)}</div>
-          <div style="flex:1;min-width:0">
-            <div class="act-name">${a.nom}</div>
-            <div class="act-date">${a.date} · ${a.type}</div>
+        <div class="act-item">
+          <div class="act-row">
+            <div class="act-type" style="background:${actBg(a.type)}">${actIcon(a.type)}</div>
+            <div style="flex:1;min-width:0">
+              <div class="act-name">${a.nom}</div>
+              <div class="act-date">${a.date} · ${a.type}</div>
+            </div>
+            <div class="act-stats">
+              <div><span class="act-stat-val">${a.distance_km}</span> km</div>
+              <div><span class="act-stat-val">${a.elevation_m}</span> m D+</div>
+              <div><span class="act-stat-val">${a.duree}</span></div>
+              ${a.puissance_moy ? `<div><span class="act-stat-val">${a.puissance_moy}</span>W</div>` : ''}
+              ${a.fc_moy ? `<div><span class="act-stat-val">${a.fc_moy}</span>bpm</div>` : ''}
+            </div>
           </div>
-          <div class="act-stats">
-            <div><span class="act-stat-val">${a.distance_km}</span> km</div>
-            <div><span class="act-stat-val">${a.elevation_m}</span> m D+</div>
-            <div><span class="act-stat-val">${a.duree}</span></div>
-            ${a.puissance_moy ? `<div><span class="act-stat-val">${a.puissance_moy}</span>W</div>` : ''}
-            ${a.fc_moy ? `<div><span class="act-stat-val">${a.fc_moy}</span>bpm</div>` : ''}
-          </div>
+          ${coachBlockHTML(a)}
         </div>
       `).join('')}
     </div>
   `;
 }
+
+// ---- Débrief coach post-séance -------------------------------------------
+
+// Rendu du bloc coach pour une activité : débrief existant OU bouton d'ouverture
+function coachBlockHTML(a) {
+  if (a.debrief) {
+    return `
+      <div class="coach-block" data-activity-id="${a.id}">
+        <div class="debrief-affiche">
+          <div class="debrief-label">🎯 Débrief coach</div>
+          <div class="debrief-texte">${esc(a.debrief).replace(/\n/g,'<br>')}</div>
+          ${a.ressenti ? `<div class="ressenti-rappel">Ton ressenti : « ${esc(a.ressenti)} »</div>` : ''}
+          <button class="btn-reressenti" onclick="ouvrirRessenti(${a.id})">Modifier le ressenti</button>
+        </div>
+      </div>`;
+  }
+  // Pas encore de débrief : bouton discret qui déplie la zone de saisie
+  return `
+    <button class="coach-toggle" onclick="ouvrirRessenti(${a.id})">+ Ajouter un ressenti / débrief</button>
+    <div class="coach-block" data-activity-id="${a.id}"></div>`;
+}
+
+// Ouvre (ou rouvre) la zone de saisie du ressenti
+function ouvrirRessenti(activityId) {
+  const block = document.querySelector(`.coach-block[data-activity-id="${activityId}"]`);
+  // Masque le bouton toggle s'il existe juste avant
+  const toggle = block.previousElementSibling;
+  if (toggle && toggle.classList.contains('coach-toggle')) toggle.style.display = 'none';
+  block.innerHTML = `
+    <div class="ressenti-saisie" id="ressenti-zone-${activityId}">
+      <textarea class="ressenti-input" id="ressenti-${activityId}" rows="2"
+                placeholder="Comment tu t'es senti ? (jambes, souffle, chaleur, douleurs, groupe...)"></textarea>
+      <button class="btn-debrief" onclick="envoyerRessenti(${activityId})">Générer le débrief</button>
+    </div>`;
+  document.getElementById(`ressenti-${activityId}`).focus();
+}
+
+// Envoie le ressenti au back, affiche le débrief généré
+async function envoyerRessenti(activityId) {
+  const zone  = document.getElementById(`ressenti-zone-${activityId}`);
+  const input = document.getElementById(`ressenti-${activityId}`);
+  const texte = (input.value || "").trim();
+  if (!texte) { input.focus(); return; }
+
+  zone.innerHTML = '<div class="debrief-loading">Le coach analyse ta séance…</div>';
+
+  try {
+    const resp = await fetch("/api/ressenti", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activity_id: activityId, ressenti: texte }),
+    });
+    const res = await resp.json();
+    if (!res.ok) throw new Error(res.error || "Erreur");
+
+    const src = res.intervals_method === "laps" ? " (laps détectés)"
+              : res.intervals_method === "auto" ? " (intervalles auto)"
+              : "";
+    zone.parentElement.innerHTML = `
+      <div class="debrief-affiche">
+        <div class="debrief-label">🎯 Débrief coach${src}</div>
+        <div class="debrief-texte">${esc(res.debrief).replace(/\n/g,'<br>')}</div>
+        <div class="ressenti-rappel">Ton ressenti : « ${esc(texte)} »</div>
+        <button class="btn-reressenti" onclick="ouvrirRessenti(${activityId})">Modifier le ressenti</button>
+      </div>`;
+  } catch (e) {
+    zone.innerHTML = `<div class="debrief-erreur">Erreur : ${esc(e.message)}.
+      <button class="btn-reressenti" onclick="ouvrirRessenti(${activityId})">Réessayer</button></div>`;
+  }
+}
+
+// ---- Séances recommandées -------------------------------------------------
 
 let _seances = [];
 let _filter = 'all';
@@ -339,7 +444,7 @@ function selectWorkout(card, name) {
   btn.textContent = `Détaille la séance "${name}" avec échauffement, blocs et retour au calme →`;
   btn.onclick = () => {
     window.open(`https://claude.ai/new?q=${encodeURIComponent(
-      `Détaille la séance "${name}" : échauffement, blocs principaux avec durées et intensités, retour au calme. Ma FTP est 201W, je prépare un semi-marathon en décembre 2026.`
+      `Détaille la séance "${name}" : échauffement, blocs principaux avec durées et intensités, retour au calme. Je prépare un semi-marathon avant Noël 2026 ; le vélo me sert de volume aérobie de soutien (pas d'objectif de puissance).`
     )}`, '_blank');
   };
 }
@@ -359,49 +464,31 @@ function renderChart(historique) {
   const iW = W - pad.left - pad.right;
   const iH = H - pad.top - pad.bottom;
 
-  // Valeurs min/max pour echelle
   const allVals = historique.flatMap(h => [h.CTL, h.ATL, h.TSB]);
   const minV = Math.min(...allVals) - 5;
   const maxV = Math.max(...allVals) + 5;
   const scaleY = v => pad.top + iH - ((v - minV) / (maxV - minV)) * iH;
   const scaleX = i => pad.left + (i / (historique.length - 1)) * iW;
 
-  // Construit les polylines
   const pts = (key) => historique.map((h, i) => scaleX(i).toFixed(1) + ',' + scaleY(h[key]).toFixed(1)).join(' ');
 
-  // Zone TSB coloree
-  const tsbFill = historique.map((h, i) => {
-    const x = scaleX(i).toFixed(1);
-    const y = scaleY(h.TSB).toFixed(1);
-    const y0 = scaleY(0).toFixed(1);
-    return { x, y, y0, pos: h.TSB >= 0 };
-  });
-
-  // Ligne zero
   const y0 = scaleY(0).toFixed(1);
 
-  // Labels axe X (toutes les 5 entrees)
   const xLabels = historique.filter((_, i) => i % 5 === 0 || i === historique.length - 1).map((h, _, arr) => {
     const origIdx = historique.indexOf(h);
     return '<text x="' + scaleX(origIdx).toFixed(1) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9" fill="#555">' + h.date.slice(5) + '</text>';
   }).join('');
 
-  // Labels axe Y
   const yLabels = [minV, 0, maxV].map(v => {
     return '<text x="' + (pad.left - 4) + '" y="' + (scaleY(v) + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="#555">' + Math.round(v) + '</text>';
   }).join('');
 
   el.innerHTML = '<svg width="100%" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
-    // Grille
     '<line x1="' + pad.left + '" y1="' + y0 + '" x2="' + (W - pad.right) + '" y2="' + y0 + '" stroke="#333" stroke-width="1" stroke-dasharray="3,3"/>' +
     '<line x1="' + pad.left + '" y1="' + pad.top + '" x2="' + pad.left + '" y2="' + (H - pad.bottom) + '" stroke="#2a2a2a" stroke-width="1"/>' +
-    // TSB area
     '<polyline points="' + pts('TSB') + '" fill="none" stroke="#22c55e" stroke-width="1.5" opacity="0.7"/>' +
-    // ATL
     '<polyline points="' + pts('ATL') + '" fill="none" stroke="#7c3aed" stroke-width="1.5" opacity="0.8"/>' +
-    // CTL
     '<polyline points="' + pts('CTL') + '" fill="none" stroke="#FC4C02" stroke-width="2"/>' +
-    // Dot aujourd hui
     '<circle cx="' + scaleX(historique.length - 1).toFixed(1) + '" cy="' + scaleY(historique[historique.length-1].CTL).toFixed(1) + '" r="3" fill="#FC4C02"/>' +
     '<circle cx="' + scaleX(historique.length - 1).toFixed(1) + '" cy="' + scaleY(historique[historique.length-1].TSB).toFixed(1) + '" r="3" fill="#22c55e"/>' +
     yLabels + xLabels +
