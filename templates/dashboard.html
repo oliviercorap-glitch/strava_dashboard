@@ -320,42 +320,51 @@ function render(d) {
 
 // Rendu du bloc coach pour une activité : débrief existant OU bouton d'ouverture
 function coachBlockHTML(a) {
+  // id traité comme CHAINE (id_str Strava) : on le quote et on l'échappe, jamais
+  // injecté comme littéral numérique (un id 64 bits perdrait en précision en JS).
+  const idJs = JSON.stringify(String(a.id));
+  const idAttr = esc(String(a.id));
   if (a.debrief) {
     return `
-      <div class="coach-block" data-activity-id="${a.id}">
+      <div class="coach-block" data-activity-id="${idAttr}">
         <div class="debrief-affiche">
           <div class="debrief-label">🎯 Débrief coach</div>
           <div class="debrief-texte">${esc(a.debrief).replace(/\n/g,'<br>')}</div>
           ${a.ressenti ? `<div class="ressenti-rappel">Ton ressenti : « ${esc(a.ressenti)} »</div>` : ''}
-          <button class="btn-reressenti" onclick="ouvrirRessenti(${a.id})">Modifier le ressenti</button>
+          <button class="btn-reressenti" onclick="ouvrirRessenti(${idJs})">Modifier le ressenti</button>
         </div>
       </div>`;
   }
   // Pas encore de débrief : bouton discret qui déplie la zone de saisie
   return `
-    <button class="coach-toggle" onclick="ouvrirRessenti(${a.id})">+ Ajouter un ressenti / débrief</button>
-    <div class="coach-block" data-activity-id="${a.id}"></div>`;
+    <button class="coach-toggle" onclick="ouvrirRessenti(${idJs})">+ Ajouter un ressenti / débrief</button>
+    <div class="coach-block" data-activity-id="${idAttr}"></div>`;
 }
 
-// Ouvre (ou rouvre) la zone de saisie du ressenti
+// Ouvre (ou rouvre) la zone de saisie du ressenti. activityId est une CHAINE.
 function ouvrirRessenti(activityId) {
-  const block = document.querySelector(`.coach-block[data-activity-id="${activityId}"]`);
+  const id = String(activityId);
+  const idJs = JSON.stringify(id);
+  const idSel = (window.CSS && CSS.escape) ? CSS.escape(id) : id;
+  const block = document.querySelector(`.coach-block[data-activity-id="${idSel}"]`);
   // Masque le bouton toggle s'il existe juste avant
   const toggle = block.previousElementSibling;
   if (toggle && toggle.classList.contains('coach-toggle')) toggle.style.display = 'none';
   block.innerHTML = `
-    <div class="ressenti-saisie" id="ressenti-zone-${activityId}">
-      <textarea class="ressenti-input" id="ressenti-${activityId}" rows="2"
+    <div class="ressenti-saisie" id="ressenti-zone-${id}">
+      <textarea class="ressenti-input" id="ressenti-${id}" rows="2"
                 placeholder="Comment tu t'es senti ? (jambes, souffle, chaleur, douleurs, groupe...)"></textarea>
-      <button class="btn-debrief" onclick="envoyerRessenti(${activityId})">Générer le débrief</button>
+      <button class="btn-debrief" onclick="envoyerRessenti(${idJs})">Générer le débrief</button>
     </div>`;
-  document.getElementById(`ressenti-${activityId}`).focus();
+  document.getElementById(`ressenti-${id}`).focus();
 }
 
-// Envoie le ressenti au back, affiche le débrief généré
+// Envoie le ressenti au back, affiche le débrief généré. activityId est une CHAINE.
 async function envoyerRessenti(activityId) {
-  const zone  = document.getElementById(`ressenti-zone-${activityId}`);
-  const input = document.getElementById(`ressenti-${activityId}`);
+  const id = String(activityId);
+  const idJs = JSON.stringify(id);
+  const zone  = document.getElementById(`ressenti-zone-${id}`);
+  const input = document.getElementById(`ressenti-${id}`);
   const texte = (input.value || "").trim();
   if (!texte) { input.focus(); return; }
 
@@ -365,7 +374,7 @@ async function envoyerRessenti(activityId) {
     const resp = await fetch("/api/ressenti", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ activity_id: activityId, ressenti: texte }),
+      body: JSON.stringify({ activity_id: id, ressenti: texte }),
     });
     const res = await resp.json();
     if (!res.ok) throw new Error(res.error || "Erreur");
@@ -378,11 +387,11 @@ async function envoyerRessenti(activityId) {
         <div class="debrief-label">🎯 Débrief coach${src}</div>
         <div class="debrief-texte">${esc(res.debrief).replace(/\n/g,'<br>')}</div>
         <div class="ressenti-rappel">Ton ressenti : « ${esc(texte)} »</div>
-        <button class="btn-reressenti" onclick="ouvrirRessenti(${activityId})">Modifier le ressenti</button>
+        <button class="btn-reressenti" onclick="ouvrirRessenti(${idJs})">Modifier le ressenti</button>
       </div>`;
   } catch (e) {
     zone.innerHTML = `<div class="debrief-erreur">Erreur : ${esc(e.message)}.
-      <button class="btn-reressenti" onclick="ouvrirRessenti(${activityId})">Réessayer</button></div>`;
+      <button class="btn-reressenti" onclick="ouvrirRessenti(${idJs})">Réessayer</button></div>`;
   }
 }
 
