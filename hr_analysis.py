@@ -116,8 +116,13 @@ def formater_pour_coach(a: dict | None) -> str:
             f"  ⚠ La FC moyenne ({a['fc_moy']}) masque une part importante passée en "
             f"haute intensité : la séance a été plus dure que la moyenne ne le suggère."
         )
-    if a["derive_bpm"] >= 8:
+    # Dérive cardiaque : une légère hausse de FC au fil d'une sortie est NORMALE
+    # (dérive thermorégulatrice, physiologique). On ne signale QUE si elle est très
+    # marquée (> 15 bpm), et en donnée neutre — sans l'attribuer à la déshydratation.
+    if a["derive_bpm"] > 15:
         lignes.append(
-            "  ⚠ Dérive cardiaque marquée : fatigue, chaleur ou déshydratation probable."
+            f"  (Note : dérive cardiaque de {a['derive_bpm']:+} bpm, assez marquée — "
+            "à rapprocher de la durée, de la chaleur ou de l'intensité de la séance. "
+            "Une dérive modérée reste normale et attendue sur une sortie d'endurance.)"
         )
     return "\n".join(lignes)

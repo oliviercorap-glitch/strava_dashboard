@@ -40,12 +40,13 @@ def get_conn():
 
 
 def init_db():
-    """Crée la table debriefs si elle n'existe pas. À appeler au démarrage."""
+    """Crée la table debriefs si elle n'existe pas, et migre activity_id en TEXT
+    si une ancienne version en BIGINT existe. À appeler au démarrage."""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS debriefs (
-                    activity_id   BIGINT PRIMARY KEY,
+                    activity_id   TEXT PRIMARY KEY,
                     ressenti      TEXT,
                     debrief       TEXT,
                     activity_date DATE,
@@ -54,9 +55,23 @@ def init_db():
                     updated_at    TIMESTAMPTZ DEFAULT NOW()
                 );
             """)
+            # Migration : si activity_id est encore en BIGINT (ancienne table),
+            # on le convertit en TEXT. Les id entiers existants deviennent leur
+            # representation en chaine — le meme identifiant, donc rien n'est perdu.
+            cur.execute("""
+                SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'debriefs' AND column_name = 'activity_id';
+            """)
+            row = cur.fetchone()
+            if row and row[0] != 'text':
+                cur.execute(
+                    "ALTER TABLE debriefs ALTER COLUMN activity_id TYPE TEXT "
+                    "USING activity_id::TEXT;"
+                )
+                print("[db] migration activity_id -> TEXT effectuée")
 
 
-def save_ressenti(activity_id: int, ressenti: str,
+def save_ressenti(activity_id: str, ressenti: str,
                   activity_date=None, sport=None):
     """Enregistre (ou met à jour) le ressenti d'une activité.
     Ne touche pas au débrief déjà généré."""
@@ -73,7 +88,7 @@ def save_ressenti(activity_id: int, ressenti: str,
             """, (activity_id, ressenti, activity_date, sport))
 
 
-def save_debrief(activity_id: int, debrief: str):
+def save_debrief(activity_id: str, debrief: str):
     """Enregistre le débrief généré par le coach pour une activité."""
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -83,7 +98,7 @@ def save_debrief(activity_id: int, debrief: str):
             """, (debrief, activity_id))
 
 
-def get_debrief(activity_id: int):
+def get_debrief(activity_id: str):
     """Retourne le dict {ressenti, debrief, ...} d'une activité, ou None."""
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -112,7 +127,7 @@ def get_ressentis_recents(depuis_date) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
-def get_debriefs_for(activity_ids: list[int]) -> dict:
+def get_debriefs_for(activity_ids: list[str]) -> dict:
     """Récupère en une requête les débriefs de plusieurs activités.
     Retourne un dict {activity_id: {ressenti, debrief}} pour l'affichage liste."""
     if not activity_ids:

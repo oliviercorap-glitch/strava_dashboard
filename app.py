@@ -147,8 +147,11 @@ def get_activites(jours=90):
 
 def formater_activite(a):
     duree_h = a["moving_time"] / 3600
+    # Strava migre vers des id 64 bits ; on utilise id_str (chaine) comme identifiant
+    # de reference, avec repli sur str(id) pour les anciennes activites en cache.
+    act_id = a.get("id_str") or str(a["id"])
     return {
-        "id":            a["id"],
+        "id":            act_id,
         "nom":           a.get("name", "Sortie"),
         "type":          a.get("sport_type", a.get("type", "?")),
         "date":          a.get("start_date_local", "")[:10],
@@ -227,16 +230,23 @@ def calculer_charge(activites):
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """Tu es un coach specialise en medecine du sport pour les athletes de plus de 50 ans.
-Tu conseilles Olivier, 52 ans, base a Shanghai.
+Tu conseilles Olivier, 53 ans, base a Shanghai.
 
 PROFIL MEDICAL & HISTORIQUE :
-- Synovite du genou en decembre 2025, declenchee par une augmentation de volume trop rapide et erratique
-- Risque de recidive si progression trop agressive ou irreguliere
-- Recuperation musculaire plus lente apres 50 ans — les adaptations prennent 20-30% plus de temps
-- Tendons et cartilages moins tolerants aux surcharges brutales
+- ANTECEDENT (pas une blessure recente) : synovite du genou GAUCHE en decembre 2025, causee par
+  une hausse de volume trop rapide. C'est de l'histoire ancienne (~1 an) : depuis, Olivier a couru
+  et roule regulierement SANS recidive. Ne le traite PAS comme "en reprise", "de retour de blessure"
+  ou devant "reconstruire sa base" ; il n'est plus en phase de reprise. Garde simplement une
+  vigilance de fond sur les hausses de volume (regle des 10%), sans dramatiser le genou a chaque sortie.
+- Recuperation musculaire un peu plus lente apres 50 ans — les adaptations prennent plus de temps.
+- DERIVE CARDIAQUE : la FC qui monte progressivement a effort constant au fil d'une sortie est un
+  phenomene PHYSIOLOGIQUE NORMAL (derive thermoregulatrice), present sur presque toutes les sorties
+  d'endurance. Ne la signale comme notable que si elle est tres marquee (> 15 bpm), et ne l'attribue
+  JAMAIS automatiquement a la deshydratation. Une derive moderee n'est PAS un probleme a commenter.
 
 PROFIL SPORTIF :
-- OBJECTIF PRINCIPAL ET UNIQUE : semi-marathon avant Noel 2026
+- OBJECTIF PRINCIPAL ET UNIQUE : semi-marathon avant Noel 2026. Le plan de course est gere par
+  l'app Runna, qui programme ses seances et s'adapte a sa progression.
 - Le velo N'EST PLUS un objectif de puissance : c'est du volume aerobie de soutien a la course
   + du plaisir social (sorties groupe S-CAFE, tenir 100 km a 28-30 km/h ~120W). Une sortie velo
   Z2 ou a l'abri dans le groupe est une seance REUSSIE. Ne JAMAIS recommander de "pousser plus
@@ -313,8 +323,10 @@ def analyser_avec_claude(activites, charge, km_semaine, km_run=0, ressentis=None
         "- Velo : sert-il bien de soutien aerobie sans fatiguer les jambes de course ?\n"
         "  (NE PAS parler de progression FTP ni recommander de pousser la puissance)\n\n"
         "## Recommandations 7 prochains jours\n"
-        "Propose exactement 3 seances adaptees au profil medical (50+, synovite genou) et a\n"
-        "l'objectif semi (le velo reste en soutien aerobie, pas d'objectif de puissance).\n"
+        "Propose exactement 3 seances adaptees au profil (50+, antecedent genou a surveiller sans\n"
+        "dramatiser) et a l'objectif semi (le velo reste en soutien aerobie, pas d'objectif de\n"
+        "puissance). Note : le plan running est gere par Runna, donc ces propositions completent/\n"
+        "s'articulent avec, elles ne remplacent pas son plan.\n"
         "Pour chaque seance : jour suggere, type, duree, intensite precise, risque articulaire 🟢/🟡/🔴\n\n"
         "## SEANCES_JSON\n"
         "Termine OBLIGATOIREMENT par un tableau JSON valide de 3 seances, precede EXACTEMENT du\n"
@@ -493,9 +505,9 @@ def api_refresh():
 def api_ressenti():
     """Enregistre le ressenti d'une activité, puis génère le débrief coach."""
     data = request.get_json(force=True)
-    try:
-        activity_id = int(data["activity_id"])
-    except (KeyError, TypeError, ValueError):
+    # L'id d'activite est traite comme une CHAINE (id_str Strava), jamais converti en int
+    activity_id = str(data.get("activity_id") or "").strip()
+    if not activity_id:
         return jsonify({"ok": False, "error": "activity_id invalide"}), 400
 
     ressenti = (data.get("ressenti") or "").strip()
@@ -549,12 +561,12 @@ def api_ressenti():
     })
 
 
-@app.route("/api/debrief/<int:activity_id>")
+@app.route("/api/debrief/<activity_id>")
 @login_required
 def api_get_debrief(activity_id):
-    """Retourne le débrief déjà enregistré pour une activité."""
+    """Retourne le débrief déjà enregistré pour une activité (id en chaîne)."""
     try:
-        d = db.get_debrief(activity_id)
+        d = db.get_debrief(str(activity_id))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     if not d:
