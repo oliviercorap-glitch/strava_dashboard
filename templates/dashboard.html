@@ -322,7 +322,8 @@ function render(d) {
 function coachBlockHTML(a) {
   // id traité comme CHAINE (id_str Strava) : on le quote et on l'échappe, jamais
   // injecté comme littéral numérique (un id 64 bits perdrait en précision en JS).
-  const idJs = JSON.stringify(String(a.id));
+  // Guillemets SIMPLES : l'attribut onclick="..." utilise déjà des doubles.
+  const idJs = "'" + String(a.id) + "'";
   const idAttr = esc(String(a.id));
   if (a.debrief) {
     return `
@@ -344,7 +345,7 @@ function coachBlockHTML(a) {
 // Ouvre (ou rouvre) la zone de saisie du ressenti. activityId est une CHAINE.
 function ouvrirRessenti(activityId) {
   const id = String(activityId);
-  const idJs = JSON.stringify(id);
+  const idJs = "'" + id + "'";
   const idSel = (window.CSS && CSS.escape) ? CSS.escape(id) : id;
   const block = document.querySelector(`.coach-block[data-activity-id="${idSel}"]`);
   // Masque le bouton toggle s'il existe juste avant
@@ -362,7 +363,7 @@ function ouvrirRessenti(activityId) {
 // Envoie le ressenti au back, affiche le débrief généré. activityId est une CHAINE.
 async function envoyerRessenti(activityId) {
   const id = String(activityId);
-  const idJs = JSON.stringify(id);
+  const idJs = "'" + id + "'";
   const zone  = document.getElementById(`ressenti-zone-${id}`);
   const input = document.getElementById(`ressenti-${id}`);
   const texte = (input.value || "").trim();
